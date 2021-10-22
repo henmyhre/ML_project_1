@@ -143,6 +143,77 @@ def ridge_regression(y, tx, lambda_):
     # ***************************************************
     return w
 
+def sigmoid(t):
+    """apply the sigmoid function on t."""
+    sig = 1/(1+np.exp(-t))
+    return sig
+
+def calculate_loss_log(y, tx, w):
+    """compute the cost by negative log likelihood."""
+    pred = sigmoid(np.dot(tx, w))
+    loss = np.squeeze(-np.dot(y.T, np.log(pred)) + np.dot((1-y).T, np.log(1-pred)))
+    return loss
+
+def calculate_gradient_log(y, tx, w):
+    """compute the gradient of loss."""
+    gradient = np.dot(tx.T, sigmoid(np.dot(tx, w)) - y)
+    return gradient
+
+def learning_by_gradient_descent_log(y, tx, w, gamma):
+    """
+    Do one step of gradient descent using logistic regression.
+    Return the loss and the updated w.
+    """
+    grad = calculate_gradient_log(y, tx, w)
+    loss = calculate_loss_log(y, tx, w)
+    w = w - gamma * grad
+    return loss, w
+
+def logistic_regression(y, tx, initial_w, max_iters, gamma):
+    losses = []
+    w = initial_w
+    threshold = 1e-8
+    for iter in range(max_iters):
+      # get loss and update w.
+      loss, w = learning_by_gradient_descent_log(y, tx, w, gamma)
+      # log info
+      if iter % 100 == 0:
+          print("Current iteration={i}, loss={l}".format(i=iter, l=loss))
+      # converge criterion
+      losses.append(loss)
+      if len(losses) > 1 and np.abs(losses[-1] - losses[-2]) < threshold:
+          break
+
+def penalized_logistic_regression(y, tx, w, lambda_):
+    """return the loss, gradient"""
+    loss = calculate_loss_log(y, tx, w) + lambda_*np.squeeze(w.T @ w)
+    grad = calculate_gradient_log(y, tx, w) + 2*lambda_*w
+    return loss, grad
+
+def learning_by_penalized_gradient(y, tx, w, gamma, lambda_):
+    """
+    Do one step of gradient descent, using the penalized logistic regression.
+    Return the loss and updated w.
+    """
+    loss, grad = penalized_logistic_regression(y, tx, w, lambda_)
+    w = w - gamma*grad
+    return loss, w
+
+def reg_logistic_regression(y, tx, lambda_, initial_w, max_iters, gamma):
+    losses = []
+    w = initial_w
+    threshold = 1e-8
+    for iter in range(max_iters):
+        # get loss and update w.
+        loss, w = learning_by_penalized_gradient(y, tx, w, gamma, lambda_)
+        # log info
+        if iter % 100 == 0:
+            print("Current iteration={i}, loss={l}".format(i=iter, l=loss))
+        # converge criterion
+        losses.append(loss)
+        if len(losses) > 1 and np.abs(losses[-1] - losses[-2]) < threshold:
+            break
+
 def build_k_indices(y, k_fold, seed):
     """build k indices for k-fold."""
     num_row = y.shape[0]
