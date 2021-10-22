@@ -124,13 +124,26 @@ def least_squares(y, tx):
     w = np.linalg.solve(tx.T @ tx, tx.T @ y)
     return w
 
+def correlation_filter(X, y):
+    abs_corr = np.zeros(X.shape[1])
+    for index, x in enumerate(X.T):
+        abs_corr[index] = np.abs(np.corrcoef(y,x.T)[0,1])
+    quality = np.where(abs_corr > 0.05)
+    return X[:,quality[0]], quality[0]
 
-def build_poly(x, degree):
+
+def build_polynomial(x, y, degree):
     """polynomial basis functions for input data x, for j=0 up to j=degree."""
     Extended = np.empty((x.shape[0],0))
+    
     for j in range(0, degree+1):
         for i in range(x.shape[1]):
             Extended = np.c_[Extended, x[:,i]**j]
+    
+    # add square root        
+    Extended = np.c_[Extended, np.sqrt(np.abs(x))]        
+    
+    
     return Extended
 
 def ridge_regression(y, tx, lambda_):
@@ -143,77 +156,6 @@ def ridge_regression(y, tx, lambda_):
     # ***************************************************
     return w
 
-def sigmoid(t):
-    """apply the sigmoid function on t."""
-    sig = 1/(1+np.exp(-t))
-    return sig
-
-def calculate_loss_log(y, tx, w):
-    """compute the cost by negative log likelihood."""
-    pred = sigmoid(np.dot(tx, w))
-    loss = np.squeeze(-np.dot(y.T, np.log(pred)) + np.dot((1-y).T, np.log(1-pred)))
-    return loss
-
-def calculate_gradient_log(y, tx, w):
-    """compute the gradient of loss."""
-    gradient = np.dot(tx.T, sigmoid(np.dot(tx, w)) - y)
-    return gradient
-
-def learning_by_gradient_descent_log(y, tx, w, gamma):
-    """
-    Do one step of gradient descent using logistic regression.
-    Return the loss and the updated w.
-    """
-    grad = calculate_gradient_log(y, tx, w)
-    loss = calculate_loss_log(y, tx, w)
-    w = w - gamma * grad
-    return loss, w
-
-def logistic_regression(y, tx, initial_w, max_iters, gamma):
-    losses = []
-    w = initial_w
-    threshold = 1e-8
-    for iter in range(max_iters):
-      # get loss and update w.
-      loss, w = learning_by_gradient_descent_log(y, tx, w, gamma)
-      # log info
-      if iter % 100 == 0:
-          print("Current iteration={i}, loss={l}".format(i=iter, l=loss))
-      # converge criterion
-      losses.append(loss)
-      if len(losses) > 1 and np.abs(losses[-1] - losses[-2]) < threshold:
-          break
-
-def penalized_logistic_regression(y, tx, w, lambda_):
-    """return the loss, gradient"""
-    loss = calculate_loss_log(y, tx, w) + lambda_*np.squeeze(w.T @ w)
-    grad = calculate_gradient_log(y, tx, w) + 2*lambda_*w
-    return loss, grad
-
-def learning_by_penalized_gradient(y, tx, w, gamma, lambda_):
-    """
-    Do one step of gradient descent, using the penalized logistic regression.
-    Return the loss and updated w.
-    """
-    loss, grad = penalized_logistic_regression(y, tx, w, lambda_)
-    w = w - gamma*grad
-    return loss, w
-
-def reg_logistic_regression(y, tx, lambda_, initial_w, max_iters, gamma):
-    losses = []
-    w = initial_w
-    threshold = 1e-8
-    for iter in range(max_iters):
-        # get loss and update w.
-        loss, w = learning_by_penalized_gradient(y, tx, w, gamma, lambda_)
-        # log info
-        if iter % 100 == 0:
-            print("Current iteration={i}, loss={l}".format(i=iter, l=loss))
-        # converge criterion
-        losses.append(loss)
-        if len(losses) > 1 and np.abs(losses[-1] - losses[-2]) < threshold:
-            break
-
 def build_k_indices(y, k_fold, seed):
     """build k indices for k-fold."""
     num_row = y.shape[0]
@@ -224,70 +166,162 @@ def build_k_indices(y, k_fold, seed):
                  for k in range(k_fold)]
     return np.array(k_indices)
 
-def cross_validation(y, x, k_indices, k, lambda_, degree):
+def cross_validation(y, x, k_indices, k, gamma, lambda_):
     """return the loss of ridge regression."""
-    # ***************************************************
+    # split according to k_indices
     y_test = y[k_indices[k]]
     x_test = x[k_indices[k]]
     tr_indice = k_indices[~(np.arange(k_indices.shape[0]) == k)]
     tr_indice = tr_indice.reshape(-1)
     y_train = y[tr_indice]
     x_train = x[tr_indice]
+    
+    w = np.zeros((x.shape[1], 1))
+    threshold = 1e-8
+    losses = []
+    max_iter = 10000
+    # start the logistic regression
+    for iter in range(max_iter):
+        # get loss and update w.
+        loss, w = learning_by_penalized_gradient(y_train, x_train, w, gamma, lambda_)
+        # log info
+        if iter % 100 == 0:
+            print("Current iteration={i}, loss={l}".format(i=iter, l=loss))
+        # converge criterion
+        losses.append(loss)
+        if len(losses) > 1 and np.abs(losses[-1] - losses[-2]) < threshold:
+            break
+        
 
-    # ***************************************************
-    # form data with polynomial degree
-    if degree > 0:
-        x_train_ex = build_poly(x_train, degree)
-        x_test_ex =  build_poly(x_test, degree) 
-    else:
-        x_train_ex, x_test_ex = x_train, x_test
-    # ***************************************************
-    # ridge regression: 
-    w = ridge_regression(y_train, x_train_ex, lambda_)
-    # ***************************************************
     # calculate the loss for train and test data:
-    loss_tr = np.sqrt(2*compute_loss(y_train, x_train_ex, w))
-    loss_te = np.sqrt(2*compute_loss(y_test, x_test_ex, w))
+    loss_te = calculate_loss(y_test, x_test, w)
     
     
-    return loss_tr, loss_te
+    return loss_te
+
+def sigmoid(t):
+    """apply the sigmoid function on t."""
+    return 1/(1+np.exp(-t))
+
+def calculate_loss(y, tx, w):
+    """compute the loss: negative log likelihood."""
+    z = sigmoid(tx @ w)
+    loss = np.squeeze(- np.dot(y.T, np.log(z)) + np.dot((1 - y).T, np.log(1 - z)))
+    return loss
+
+def calculate_gradient(y, tx, w):
+    """compute the gradient of loss."""
+    gradient = tx.T @ (sigmoid(tx @ w) - y)
+    return gradient
+
+def learning_by_gradient_descent(y, tx, w, gamma):
+    """
+    Do one step of gradient descent using logistic regression.
+    Return the loss and the updated w.
+    """
+    # ***************************************************
+    loss = calculate_loss(y, tx, w)
+    # ***************************************************
+    gradient = calculate_gradient(y, tx, w)
+    # ***************************************************
+    w = w - gradient*gamma
+    # ***************************************************
+    return loss, w
+
+def penalized_logistic_regression(y, tx, w, lambda_):
+    """return the loss, gradient"""
+    # ***************************************************
+    loss = calculate_loss(y, tx, w) + lambda_ * np.squeeze(w.T.dot(w))
+    
+    gradient = calculate_gradient(y, tx, w) + 2 * lambda_ * w
+    return loss, gradient
+
+def learning_by_penalized_gradient(y, tx, w, gamma, lambda_):
+    """
+    Do one step of gradient descent, using the penalized logistic regression.
+    Return the loss and updated w.
+    """
+    loss, gradient = penalized_logistic_regression(y, tx, w, lambda_)
+    # ***************************************************
+    w -= gradient*gamma
+    return loss, w
+
+
+
+
 
 #%%
-#path = 'C:\Users\jurri\OneDrive\Documenten\University\Exchange\ML\train.csv\'
+path =  "train"
    
-X, _ = load_data_features("train.csv")
-y = load_results("train.csv")
+X, _ = load_data_features(path +"/train.csv")
+y = load_results(path +"/train.csv")
+Xtest, ids = load_data_features(path + "/test.csv")
+
+#%% remove lowly correlated features (<0.05)
+
+X_new, columns = correlation_filter(X,y)
+X_test_new = Xtest[:, columns]
+
+#%% fill missing values and standardize
+X_new[X_new == -999] = np.nan
+X_test_new[X_test_new == -999] = np.nan
+
+means = np.nanmean(X, axis = 0)
+sigmas = np.nanstd(X, axis = 0)
+X_new = (X_new - means)/sigmas
+X_test_new = (X_test_new - means)/sigmas
+
+#%% Add features and 
+degree  = 18
+X_new = build_polynomial(X_new, y, degree)
+X_test_new = build_polynomial(X_test_new, y, degree)
+
+#%%
+
+w = np.zeros((X_new.shape[1], 1))
+threshold = 1e-8
+losses = []
+max_iter = 10000
+lambda_ = 0.0001
+gamma = 0.1
+# start the logistic regression
+for iter in range(max_iter):
+     # get loss and update w.
+    loss, w = learning_by_penalized_gradient(y, X_new, w, gamma, lambda_)
+        # log info
+    if iter % 100 == 0:
+        print("Current iteration={i}, loss={l}".format(i=iter, l=loss))
+    # converge criterion
+    losses.append(loss)
+    if len(losses) > 1 and np.abs(losses[-1] - losses[-2]) < threshold:
+        break
+
 #%% Find which lambda to use and which degree is best
 
-def find_best_lamda(x_train, y_train, k_fold = 10, degree = 2, seed = 1):
-    lambdas = np.logspace(-4, 0, 30)
-    degrees = range(1, 10)
-    # split data in k fold
+def find_best_lamda(x_train, y_train, k_fold = 10, seed = 1):
+    lambdas = np.logspace(-6, -4, 10)
     k_indices = build_k_indices(y, k_fold, seed)
     # define lists to store the loss of training data and test data
-    rmse_te = np.empty((len(lambdas), len(degrees)))
-    # ***************************************************
-    for index_degree, degree in enumerate(degrees):
-            x_train_ex = build_poly(x_train, degree)
-            #find best lambda:
-            for lambda_index, lambda_ in enumerate(lambdas):
-                losses_te = []
-                for k in range(k_fold):
-                    _, loss_te = cross_validation(y_train, x_train_ex, k_indices, k, lambda_, degree)
-                    losses_te.append(loss_te)
-                rmse_te[lambda_index,index_degree] = np.mean(losses_te)
+    rmse_te = []
+    gamma = 0.01
+    for lambda_index, lambda_ in enumerate(lambdas):
+        losses_te = []
+        print(lambda_index)
+        for k in range(k_fold):
+            _, loss_te = cross_validation(y_train, x_train, k_indices, k, gamma, lambda_)
+            losses_te.append(loss_te)
+        rmse_te.append(np.mean(losses_te))
         
-    best_index = np.unravel_index(rmse_te.argmin(), rmse_te.shape)
-    print(best_index)    
-    return lambdas[best_index[0]], degrees[best_index[1]]
+    return lambdas[np.argmin(rmse_te)]
 
-lambda_ = find_best_lamda(X,y)
-w = ridge_regression(y, X, lambda_)
+
+lambda_ = find_best_lamda(X_new, y)
+
+w = ridge_regression(y, X_new, lambda_)
 
 
 
 #%% Create prediction
-Xtest, ids = load_data_features("test.csv")
 
 def predict_labels(weights, data):
     """Generates class predictions given weights, and a test data matrix"""
@@ -312,12 +346,13 @@ def create_csv_submission(ids, y_pred, name):
         for r1, r2 in zip(ids, y_pred):
             writer.writerow({'Id':int(r1),'Prediction':int(r2)})
             
-y_pred = predict_labels(w, Xtest)
+            
 
-name = "first_try.csv"
+y_pred = predict_labels(w, X_test_new)
+
+name = "18_pol_try.csv"
 
 create_csv_submission(ids, y_pred, name)
-
 
 
 
