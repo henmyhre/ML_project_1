@@ -49,7 +49,6 @@ def compute_gradient(y, tx, w):
     e = y - np.dot(tx, w)
     return -(1/N) * np.dot(tx.T,e)      
 
-
 def gradient_descent(y, tx, initial_w, max_iters, gamma):
     """Gradient descent algorithm."""
     # Define parameters to store w and loss
@@ -119,32 +118,13 @@ def stochastic_gradient_descent(
             
     return losses, ws
 
+#%% Least squares and variants
+
 def least_squares(y, tx):
     """calculate the least squares solution."""
     w = np.linalg.solve(tx.T @ tx, tx.T @ y)
     return w
 
-def correlation_filter(X, y):
-    abs_corr = np.zeros(X.shape[1])
-    for index, x in enumerate(X.T):
-        abs_corr[index] = np.abs(np.corrcoef(y,x.T)[0,1])
-    quality = np.where(abs_corr > 0.05)
-    return X[:,quality[0]], quality[0]
-
-
-def build_polynomial(x, y, degree):
-    """polynomial basis functions for input data x, for j=0 up to j=degree."""
-    Extended = np.empty((x.shape[0],0))
-    
-    for j in range(0, degree+1):
-        for i in range(x.shape[1]):
-            Extended = np.c_[Extended, x[:,i]**j]
-    
-    # add square root        
-    Extended = np.c_[Extended, np.sqrt(np.abs(x))]        
-    
-    
-    return Extended
 
 def ridge_regression(y, tx, lambda_):
     """implement ridge regression."""
@@ -154,7 +134,10 @@ def ridge_regression(y, tx, lambda_):
     else:
         w = 1/(tx.T @ tx + lambda_) * tx.T @ y                        
     # ***************************************************
-    return w
+    return w       
+    
+    
+#cross validation functions
 
 def build_k_indices(y, k_fold, seed):
     """build k indices for k-fold."""
@@ -199,20 +182,47 @@ def cross_validation(y, x, k_indices, k, gamma, lambda_):
     
     return loss_te
 
+
+    
+#logistic regression functions
+
 def sigmoid(t):
     """apply the sigmoid function on t."""
     return 1/(1+np.exp(-t))
 
 def calculate_loss(y, tx, w):
     """compute the loss: negative log likelihood."""
-    z = sigmoid(tx @ w)
-    loss = np.squeeze(- np.dot(y.T, np.log(z)) + np.dot((1 - y).T, np.log(1 - z)))
-    return loss
+    inter_y = y.reshape(len(y),1)
+    z = tx @ w
+    a = np.sum(np.log(1 + np.exp(z)))
+    b = inter_y.T @ z
+    loss = a - b
+    return np.squeeze(loss)
 
 def calculate_gradient(y, tx, w):
     """compute the gradient of loss."""
-    gradient = tx.T @ (sigmoid(tx @ w) - y)
+    inter_y = y.reshape(len(y),1)
+    gradient = tx.T @ (sigmoid(tx @ w) - inter_y)
     return gradient
+
+def penalized_logistic_regression(y, tx, w, lambda_):
+    """return the loss, gradient"""
+    # ***************************************************
+    loss = calculate_loss(y, tx, w) + lambda_ * np.squeeze(w.T.dot(w))
+    gradient = calculate_gradient(y, tx, w) + 2 * lambda_ * w
+    
+    return loss, gradient
+
+def learning_by_penalized_gradient(y, tx, w, gamma, lambda_):
+    """
+    Do one step of gradient descent, using the penalized logistic regression.
+    Return the loss and updated w.
+    """
+    loss, gradient = penalized_logistic_regression(y, tx, w, lambda_)
+    # ***************************************************
+    w -= gradient*gamma
+    return loss, w
+
 
 def learning_by_gradient_descent(y, tx, w, gamma):
     """
@@ -228,26 +238,144 @@ def learning_by_gradient_descent(y, tx, w, gamma):
     # ***************************************************
     return loss, w
 
-def penalized_logistic_regression(y, tx, w, lambda_):
-    """return the loss, gradient"""
-    # ***************************************************
-    loss = calculate_loss(y, tx, w) + lambda_ * np.squeeze(w.T.dot(w))
+#%% other functions
+#-process data
+
+def normalize_data(data, mean = None, sigma = None):
+    """Standardizes the data"""
+    if mean is None:
+        mean = np.nanmean(data, axis = 0)
     
-    gradient = calculate_gradient(y, tx, w) + 2 * lambda_ * w
-    return loss, gradient
+    if sigma is None:
+        sigma = np.nanstd(data, axis = 0)
+    
+    output = (data - mean)/sigma
+    
+    return output, mean, sigma
 
-def learning_by_penalized_gradient(y, tx, w, gamma, lambda_):
-    """
-    Do one step of gradient descent, using the penalized logistic regression.
-    Return the loss and updated w.
-    """
-    loss, gradient = penalized_logistic_regression(y, tx, w, lambda_)
-    # ***************************************************
-    w -= gradient*gamma
-    return loss, w
+def standardize_data(data, min_value = None, max_value = None):
+    """maps data to [0,1] range"""
+    if min_value is None:
+        min_value = np.min(data, axis = 0)
+    
+    if max_value is None:
+        max_value = np.max(data, axis = 0)
+        
+    output = (data - min_value)/(max_value - min_value)
+    
+    return output, min_value, max_value
+
+def create_subsets(data, y):
+    """Creates four subsets based on the number of jets, which is 0, 1, 2 or 3"""
+    data_subsets = []
+    y_subsets=[]
+    for i in range(4):
+        mask = data[:,22] == i
+        data_subsets.append(data[mask])
+        y_subsets.append(y[mask])
+        
+    return data_subsets, y_subsets
+
+def remove_zero_variance(data, mask = None):
+    """removes zero variance columns based on the subset"""
+    if mask is None:
+        variance = np.var(data, axis = 0)
+        mask = np.squeeze(~np.logical_or([variance ==0],[np.isnan(variance)]))
+        
+    return data[:, mask[:]], mask
+
+def replace_nan(data):        
+    """replaces nan by median value"""
+    for j in range(data.shape[1]):
+        replace = np.median(data[~np.isnan(data[:,j]),j])
+        data[np.isnan(data[:,j]),j] = replace
+
+    return data
+
+def process_data(X_train, X_test, y_train, y_test):
+    """Processes the test and training data, splits with respect to jet number,
+    removes zero variance, standardizes and normalizes the data and 
+    replaces -999 by median value of column"""
+    
+    train_subsets, y_train = create_subsets(X_train, y_train)
+    test_subsets, y_test = create_subsets(X_test, y_test)
+    
+    for i in range(4):
+        # change training sets
+        train_subsets[i][train_subsets[i] == -999] = np.nan
+        train_subsets[i], mean, sigma, min_value, max_value =  standardize_data(train_subsets[i],
+                                                                               mean = None, sigma = None, min_value = None, max_value = None)
+        train_subsets[i] = replace_nan(train_subsets[i])
+        train_subsets[i], mask = remove_zero_variance(train_subsets[i])
+        
+        #change test sets accordingly to training sets
+        test_subsets[i][test_subsets[i] == -999] =np.nan
+        test_subsets[i], _, _, _, _ =  standardize_data(test_subsets[i],
+                                                mean = mean, sigma = sigma, min_value = min_value, max_value = max_value)
+        
+        test_subsets[i] = replace_nan(test_subsets[i])
+        test_subsets[i], _ = remove_zero_variance(test_subsets[i], mask)
+        
+    return train_subsets, test_subsets, y_train, y_test
+
+#-Feature engineering
+
+def build_polynomial(x, y, degree):
+    """polynomial basis functions for input data x, for j=0 up to j=degree."""
+    Extended = np.empty((x.shape[0],0))
+    
+    for j in range(0, degree+1):
+        for i in range(x.shape[1]):
+            Extended = np.c_[Extended, x[:,i]**j]
+    
+    # add square root        
+    Extended = np.c_[Extended, np.sqrt(np.abs(x))] 
+    return Extended
+
+def add_cross_terms(data):
+    """Adds cross terms between columns"""
+    enriched_data = data
+    for x1 in data.T:
+        for x2 in data.T:
+            if np.sum(x1 - x2) != 0:
+                enriched_data = np.c_[enriched_data, x1*x2]
+                
+    return enriched_data  
 
 
+def add_features(data, degree = None, sqrt = True, log = True, cross_terms = True):
+    """Adds following features to data set:
+    -sqrt of features
+    -polynomial extension of 0 up to degree
+    -log of features
+    """ 
+    
+    #polynomial
+    if degree is not None:
+        output = build_polynomial(data, degree)
+    else:
+        output = np.empty((data.shape[0],0))
+        
+    # add sqrt
+    if sqrt:
+        output = np.c_[output, np.sqrt(np.abs(data))]
+        
+    #log
+    if log:
+        output = np.c_[output, np.log(np.abs(data), where = data!=0)]
+        
+    if cross_terms:
+        output = np.c_[output, add_cross_terms(data)]
+            
+    return output
 
+
+def correlation_filter(X, y):
+    abs_corr = np.zeros(X.shape[1])
+    for index, x in enumerate(X.T):
+        abs_corr[index] = np.abs(np.corrcoef(y,x.T)[0,1])
+    quality = np.where(abs_corr > 0.05)
+    return X[:,quality[0]], quality[0]
 
 
 #%%
