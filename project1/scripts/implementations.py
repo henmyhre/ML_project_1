@@ -187,3 +187,26 @@ def learning_by_penalized_gradient(y, tx, w, gamma, lambda_):
     w -= gradient*gamma
     
     return loss, w
+
+def logistic_regression_penalized_gradient_descent(y, x, lambda_, gamma,max_iter):
+    # init parameters
+    threshold = 1e-8
+    losses = []
+
+    # build tx
+    tx = np.c_[np.ones((y.shape[0], 1)), x]
+    w = np.zeros((tx.shape[1], 1))
+
+    # start the logistic regression
+    for iter in range(max_iter):
+        # get loss and update w.
+        loss, w = learning_by_penalized_gradient(y, tx, w, gamma, lambda_)
+        # log info
+        if iter % 100 == 0:
+            print("Current iteration={i}, loss={l}".format(i=iter, l=loss))
+        # converge criterion
+        losses.append(loss)
+        if len(losses) > 1 and np.abs(losses[-1] - losses[-2]) < threshold:
+            break
+            
+    return loss, w
