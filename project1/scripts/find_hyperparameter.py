@@ -12,8 +12,8 @@ def find_parameters(X_train, y_train, degrees, lambdas, methods):
     input:
         X_train = ndarray of training data
         y_train =  1darray of goal output corresponding to the training data
-        lamdas = 1darray of floats to use as lambdas
-        degrees = 1darray of integers to use for polynomial expansion
+        lamdas = list of 1darray of floats to use as lambdas
+        degrees = list of 1darray of integers to use for polynomial expansion
         gamma = learning rate, only relevant if penalized logistic regresssion is used
     output:
         best_parameter_loss = list containg best combination of method, degree and lambda per subset
@@ -27,7 +27,7 @@ def find_parameters(X_train, y_train, degrees, lambdas, methods):
     for i in range(3):
         print("Testing for set",i)
         parameters, losses = hyper_optimizing(X_train[i], y_train[i],
-                                methods, lambdas, degrees, 10**-10, 3000)
+                                methods, lambdas[i], degrees[i], 10**-10, 3000)
         
         best_parameter_per_set.append(parameters)
         losses_sets.append(losses)
@@ -61,7 +61,7 @@ def hyper_optimizing(X_train, y_train, methods = ["Ridge_regression"],
         raise NameError("At least one method is wrong")
         
     all_losses = np.zeros((len(methods), len(degrees), len(lambdas)))
-    best_parameters = np.zeros((3,1))
+    best_parameters = []
     
     for degree_index, degree in enumerate(degrees):
         X_train_ex = add_features(X_train, degree = degree)
@@ -106,9 +106,9 @@ def hyper_optimizing(X_train, y_train, methods = ["Ridge_regression"],
             
     min_loss = np.argmin(all_losses)
     min_loss = np.unravel_index(min_loss, (len(methods), len(degrees), len(lambdas)))
-    best_parameters[0] = methods[min_loss[0]]
-    best_parameters[1] = degrees[min_loss[1]]
-    best_parameters[2] = lambdas[min_loss[2]]  
+    best_parameters.append(methods[min_loss[0]])
+    best_parameters.append(degrees[min_loss[1]])
+    best_parameters.append(lambdas[min_loss[2]])  
         
     return best_parameters, all_losses
 
@@ -131,8 +131,9 @@ def cross_validation_ridge(y, x, k_indices, k, lambda_):
     tr_indice = tr_indice.reshape(-1)
     y_train = y[tr_indice]
     x_train = x[tr_indice, :]
-
+    
     w = ridge_regression(y_train, x_train, lambda_)
+   
     # calculate the loss for train and test data:
     loss_te = np.sqrt(2*compute_mse(y_test, x_test, w))
     # Calculate F_score, seems more reliable to compare different degrees
@@ -163,42 +164,18 @@ def cross_validation_logistic(y, x, k_indices, k,lambda_, gamma,max_iter):
     y_train = y[tr_indice]
     x_train = x[tr_indice, :]
     
-    w = np.zeros((x.shape[1], 1))
-    threshold = 1e-8
-    losses = []
-    # start the logistic regression
-    iter = 0
-    while iter <max_iter:
-        # get loss and update w.
-        loss, w = learning_by_penalized_gradient(y_train, x_train, w, gamma, lambda_)
-        # log info
-        if iter % 999 == 0:
-            print("Current iteration={i}, loss={l}".format(i=iter, l=loss))
-            
-        # check loss actually decreases, if not decrease gamma
-        if iter > 0:
-            if loss > losses[-1]:
-                gamma = gamma/2
-            if np.isinf(loss):
-                iter = 0
-                w = np.zeros((x.shape[1], 1))
-                gamma = gamma/10
-                
-        iter +=1
-        # converge criterion
-        losses.append(loss)
-        if len(losses) > 1 and np.abs(losses[-1] - losses[-2]) < threshold:
-            break
+    loss, w = logistic_regression_penalized_gradient_descent(y_train, x_train, lambda_, gamma,max_iter)
         
     # calculate the loss for train and test data:
     loss_te = calculate_loss(y_test, x_test, w)
     
-    # Calculate F_score, seems more reliable to compare different degrees
+    # Calculate F_score
     y_new = x_test @ w
     precision, recall, F_score, accuracy = quantify_result(y_new, y_test)
     print(accuracy, F_score)
     
     return loss_te, w
+
 
 def quantify_result(y_found, y_real):
     """Quantifies the result of y_found by comparing it to the real output, y_real

@@ -193,17 +193,28 @@ def logistic_regression_penalized_gradient_descent(y, x, lambda_, gamma,max_iter
     threshold = 1e-8
     losses = []
 
-    # build tx
-    tx = np.c_[np.ones((y.shape[0], 1)), x]
-    w = np.zeros((tx.shape[1], 1))
-
+    w = np.random.randn(x.shape[1], 1)/10000
+    threshold = 1e-8
+    losses = []
     # start the logistic regression
-    for iter in range(max_iter):
+    iter = 0
+    while iter <max_iter:
         # get loss and update w.
-        loss, w = learning_by_penalized_gradient(y, tx, w, gamma, lambda_)
+        loss, w = learning_by_penalized_gradient(y, x, w, gamma, lambda_)
         # log info
-        if iter % 100 == 0:
+        if iter % 999 == 0:
             print("Current iteration={i}, loss={l}".format(i=iter, l=loss))
+            
+        # check loss actually decreases, if not decrease gamma
+        if iter > 0:
+            if loss > losses[-1]:
+                gamma = gamma/2
+            if np.isinf(loss):
+                iter = 0
+                w = np.random.randn(x.shape[1], 1)
+                gamma = gamma/10
+                
+        iter +=1
         # converge criterion
         losses.append(loss)
         if len(losses) > 1 and np.abs(losses[-1] - losses[-2]) < threshold:
