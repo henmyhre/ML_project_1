@@ -3,7 +3,7 @@
 This project aims to predict whether or not a higgs boson is created in a high speed proton collision. The data to train the model is train.csv and the data on which the model was tested is test.csv. ultimately we got an accuracy of 0.833 and an F-score of 0.746. To recreate this result, you need to:
 - Install Numpy, this is the only external library that is used
 - Download the test and train datasets
-- Run the first two cells in run.ipynb
+- Run the first two cells in run.ipynb  
 
   
 
@@ -20,7 +20,7 @@ Functions which are used to process the data, including:
 In this file there are the functions which are used to find the best hyperparameters for a given input range. The functions make use of the functions in Augmenting.py and implementations.py
 
 ### Augmenting.py 
-Contains the functions which are used to augment the data and implementations.py has all the machinelearning functions and their helpers, such as ridge regression, logistic regression and gradient descent.
+Contains the functions which are used to augment the data and implementations.py has all the machinelearning functions and their helpers, such as ridge regression, logistic regression and gradient descent.  
 
   
 
