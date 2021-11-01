@@ -34,7 +34,7 @@ def add_features(data, degree = None, sqrt = True, log = True, cross_terms = Tru
         output = data
     else:
         output = np.empty((data.shape[0],0))
-        
+    print(output.shape)
     #polynomial
     if degree is not None:
         output = np.c_[output, build_polynomial(data, degree)]
@@ -42,7 +42,7 @@ def add_features(data, degree = None, sqrt = True, log = True, cross_terms = Tru
     # add sqrt
     if sqrt:
         output = np.c_[output, np.sqrt(np.abs(data))]
-        
+       
     
     if cross_terms:
         output = np.c_[output, add_cross_terms(data)]
@@ -59,10 +59,10 @@ def add_log_terms(data):
     return extended
 
 def build_polynomial(x, degree):
-    """polynomial basis functions for input data x, for j=0 up to j=degree."""
-    Extended = np.empty((x.shape[0],0))
+    """polynomial basis functions for input data x, for j=2 up to j=degree."""
+    Extended = np.ones((x.shape[0],1))
     
-    for j in range(0, degree+1):
+    for j in range(2, degree+1):
         for i in range(x.shape[1]):
             Extended = np.c_[Extended, x[:,i]**j]
     
@@ -71,9 +71,11 @@ def build_polynomial(x, degree):
 
 def add_cross_terms(data):
     """Adds cross terms between columns"""
-    enriched_data = data
-    for x1 in data.T:
-        for x2 in data.T:
+    enriched_data = np.empty((data.shape[0], 0))
+    
+    for i in range(data.shape[1]):
+        for j in range(i, data.shape[1]):
+            x1, x2 = data[:,i], data[:,j]
             if np.sum(x1 - x2) != 0:
                 enriched_data = np.c_[enriched_data, x1*x2]
                 

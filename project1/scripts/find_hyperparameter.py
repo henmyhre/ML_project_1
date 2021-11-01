@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 Functions used to find optimal hyperparameters
+
+
+TODO: loss, precision, recall variables are not used
+
 """
 
 import numpy as np
@@ -9,6 +13,7 @@ from implementations import *
 
 def find_parameters(X_train, y_train, degrees, lambdas, methods):
     """Finding best parameters and losses per set
+
     input:
         X_train = ndarray of training data
         y_train =  1darray of goal output corresponding to the training data
@@ -33,7 +38,6 @@ def find_parameters(X_train, y_train, degrees, lambdas, methods):
         losses_sets.append(losses)
     
     return best_parameter_per_set, losses_sets
-
 
 def hyper_optimizing(X_train, y_train, methods = ["Ridge_regression"],
                      lambdas = [0.1], degrees = [1], gamma = 0.0000001,  max_iter = 3000):
@@ -65,43 +69,18 @@ def hyper_optimizing(X_train, y_train, methods = ["Ridge_regression"],
     
     for degree_index, degree in enumerate(degrees):
         X_train_ex = add_features(X_train, degree = degree)
-    
+
         for method_index, method in enumerate(methods):
             
             if method == "Ridge_regression":
-                seed = 1
                 k_fold = 5
-                k_indices = build_k_indices(y_train, k_fold, seed)
-                print("Start ridge regression test for degree", str(degree),"...")
-                for index, lambda_ in enumerate(lambdas):
-                    losses_te = []
-                    for k in range(k_fold):
-                        loss_te = cross_validation_ridge(y_train, X_train_ex, k_indices, k, lambda_)
-                        losses_te.append(loss_te)
-                    all_losses[method_index, degree_index, index] = np.mean(losses_te)
-                 
-                # Show percantage of correct results for this degree
-                min_lambda = lambdas[np.argmin(all_losses[method_index, degree_index,:])]
-                print("Lowest loss is for lambda:", min_lambda, "is:", min(all_losses[method_index, degree_index,:]))
-                
+                all_losses = compute_all_losses(method, method_index,
+                                                y_train, X_train_ex, lambdas, k_fold, degree_index, degree, all_losses)
                 
             elif method == "Penalized_logistic":
-                #less k-fold for reason of speed
-                seed = 1
                 k_fold = 4
-                k_indices = build_k_indices(y_train, k_fold, seed)
-                print("Start penalized_logistic test...")
-                for index, lambda_ in enumerate(lambdas):
-                    losses_te = []
-                    for k in range(k_fold):
-                        loss_te, _ = cross_validation_logistic(y_train, X_train_ex, k_indices,
-                                                    k, lambda_, gamma, max_iter)
-                        losses_te.append(loss_te)
-                    all_losses[method_index, degree_index, index] = np.mean(losses_te) 
-                
-                # Show percantage of correct results for this degree
-                min_lambda = lambdas[np.argmin(all_losses[method_index, degree_index,:])]
-                print("Lowest loss is:", min(all_losses[method_index, degree_index,:]),"for lambda:", min_lambda)
+                all_losses = compute_all_losses(method, method_index, 
+                                                y_train, X_train_ex, lambdas, k_fold, degree_index, degree, all_losses)
                 
             
     min_loss = np.argmin(all_losses)
@@ -112,9 +91,38 @@ def hyper_optimizing(X_train, y_train, methods = ["Ridge_regression"],
         
     return best_parameters, all_losses
 
+def compute_all_losses(method, method_index, y_train, X_train, lambdas, k_fold, degree_index, degree, all_losses):
+    seed = 1
+    k_indices = build_k_indices(y_train, k_fold, seed)
 
+    print_method_status(method, degree)
+
+    for index, lambda_ in enumerate(lambdas):
+        losses_te = []
+        for k in range(k_fold):
+            if method == "Ridge_regression":
+                loss_te = cross_validation_ridge(y_train, X_train, k_indices, k, lambda_)
+            elif method == "Penalized_logistic":
+                loss_te = cross_validation_logistic(y_train, X_train, k_indices, k, lambda_, gamma, max_iter)
+
+            losses_te.append(loss_te)
+        all_losses[method_index, degree_index, index] = np.mean(losses_te)
+    
+    # Show percentage of correct results for this degree
+    min_lambda = lambdas[np.argmin(all_losses[method_index, degree_index,:])]
+    print("Lowest loss is:", min(all_losses[method_index, degree_index,:]),"for lambda:", min_lambda)
+
+    return all_losses
+
+
+
+def print_method_status(method, degree):
+    print("Start ", method, " test for degree", str(degree),"...")
+    
 def cross_validation_ridge(y, x, k_indices, k, lambda_):
+
     """return the loss of ridge regression.
+
     input:
         y = 1darray of goal output corresponding to the training data
         x = ndarray of training data
@@ -136,15 +144,18 @@ def cross_validation_ridge(y, x, k_indices, k, lambda_):
    
     # calculate the loss for train and test data:
     loss_te = np.sqrt(2*compute_mse(y_test, x_test, w))
-    # Calculate F_score, seems more reliable to compare different degrees
-    #y_new = x_test @ w
-    #precision, recall, F_score, accuracy = quantify_result(y_new, y_test)
+
+    #show accuracy and Fscore
+    y_new = x_test @ w
+    F_score, accuracy = quantify_result(y_new, y_test)
+    print("Accuracy is:",accuracy, "Fscore is:",F_score)
     
     return loss_te
 
     
 def cross_validation_logistic(y, x, k_indices, k,lambda_, gamma,max_iter):
     """return the loss of ridge regression.
+
     input:
         y = 1darray of goal output corresponding to the training data
         x = ndarray of training data
@@ -171,19 +182,20 @@ def cross_validation_logistic(y, x, k_indices, k,lambda_, gamma,max_iter):
     
     # Calculate F_score
     y_new = x_test @ w
-    precision, recall, F_score, accuracy = quantify_result(y_new, y_test)
-    print(accuracy, F_score)
+    F_score, accuracy = quantify_result(y_new, y_test)
+    print("Accuracy is:",accuracy, "Fscore is:",F_score)
     
-    return loss_te, w
+    return loss_te
 
 
 def quantify_result(y_found, y_real):
     """Quantifies the result of y_found by comparing it to the real output, y_real
+    
     input:
         y_found =  1darray containing the raw output of the model used
         y_real = 1darray with the goal output. Signal = 1, background = 0
     output:
-        precision, recall, F_score, accuracy = numbers calculated by comparing y_real to binarized y_found"""
+        F_score, accuracy = numbers calculated by comparing y_real to binarized y_found"""
     y_found[y_found<0.5]=0
     y_found[y_found>=0.5]=1
     summ = y_found + y_real
@@ -194,9 +206,10 @@ def quantify_result(y_found, y_real):
     FN = np.sum(diff == -1)
     accuracy = (TP+TN)/(TP +TN +FP + FN)
     F_score = TP/(TP + 0.5 * (FP +FN))
-    recall = TP/(TP + FN)
-    precision = TP/(TP + FP)
-    return precision, recall, F_score, accuracy
+    prec = TP/(TP+FP)
+    recall = TP/(TP+FN)
+    print("Precision is:",prec,"Recall is:",recall)
+    return F_score, accuracy
 
 
 def build_k_indices(y, k_fold, seed):

@@ -33,10 +33,11 @@ def load_data_features(path_dataset):
 """Data preprocessing
 process data is the main function, it uses:
 -create_subsets, creates subsets based on jet number
--remove_zero_variance, removes columnswithout variance
+-remove_zero_variance, removes columns without variance
 -normalize_data, normalizes the data based on the mean and on the std
--replace_missing, replaces -999 values by the median of the respective column
+-replace_missing, replaces -999 values by the median of the respective column TODO
 -correlation_filter, removes columns which correlate for less than treshold with the output"""
+
 
 
 def process_data(X_train, X_test, y_train, y_test, ids_train, ids_test):
@@ -72,15 +73,16 @@ def process_data(X_train, X_test, y_train, y_test, ids_train, ids_test):
         print("For subgroup",i,"The following columns were removed due to zero variance:",[i for i, x in enumerate(mask) if x])
         
         train_subsets[i], mean, sigma = normalize_data(train_subsets[i], mean = None, sigma = None) 
-        train_subsets[i], median = replace_missing(train_subsets[i], median = None) 
+        train_subsets[i], median = replace_missing_without_median(train_subsets[i])
         train_subsets[i], quality = correlation_filter(train_subsets[i], y_train[i], threshold = 0.01)
         print("For subgroup",i,"The following columns were kept after low correlation:",quality)
         print("Final shape of subset",i,"is:",train_subsets[i].shape)
+        print(np.mean(y_train[i]))
         
         #change test sets accordingly to training sets
         test_subsets[i], _ = remove_zero_variance(test_subsets[i], mask)
         test_subsets[i], _, _ =  normalize_data(test_subsets[i], mean, sigma)
-        test_subsets[i], _ = replace_missing(test_subsets[i], median)
+        test_subsets[i], _ = replace_missing_with_median(test_subsets[i], median)
         test_subsets[i] = test_subsets[i][:, quality]
         
     return train_subsets, test_subsets, y_train, y_test, ids_train, ids_test
@@ -89,6 +91,7 @@ def create_subsets(data, y, ids):
     """Creates four subsets based on the number of jets,
     which is 0, 1 and 2 or 3. 2 and 3 are put in one group,
     since they keep same features and have similar correlation patterns
+
     input:
         data = training/test data
         y = training/test goal-output
@@ -117,6 +120,7 @@ def create_subsets(data, y, ids):
 
 def remove_zero_variance(data, mask = None):
     """removes zero variance columns based on the subset
+    
     input:
         -data =  training/test data
         -mask = None or boolean with true values for columns which should be removed
@@ -132,11 +136,12 @@ def remove_zero_variance(data, mask = None):
 
 def normalize_data(data, mean = None, sigma = None):
     """Standardizes the data
+
     input:
         -data = training/test data
         -mean = None or mean calculated on training data
         -sigma = None or std calculated on training data
-    outpu:
+    output:
         -ouptut = normalized data
         -mean = array containing mean of each column
         -sigma = array containing std of each column"""
@@ -151,33 +156,43 @@ def normalize_data(data, mean = None, sigma = None):
     
     return output, mean, sigma
 
-
-def replace_missing(data, median = None):        
+def replace_missing_with_median(data, median):        
     """replaces -999 by median value
+
     input:
         -data = training/test data
         -median = None or list of median values for each column in training data
     output:
         -data = training/test data with -999 replaced by median values
         -median = list of median value per column"""
-    
-    if median is None:
-        median =[]
-        for j in range(data.shape[1]):
-            mask = data[:,j] != -999
-            replace = np.median(data[mask,j])
-            data[~mask,j] = replace
-            median.append(replace)
-    else:
-        for j in range(data.shape[1]):
-            mask = data[:,j] != -999
-            data[~mask,j] = median[j]
+
+    for j in range(data.shape[1]):
+        mask = data[:,j] != -999
+        data[~mask,j] = median[j]
 
     return data, median
 
+def replace_missing_without_median(data):        
+    """replaces -999 by median value
+
+    input:
+        -data = training/test data
+    output:
+        -data = training/test data with -999 replaced by median values
+        -median = list of median value per column"""
+    
+    median =[]
+    for j in range(data.shape[1]):
+        mask = data[:,j] != -999
+        replace = np.median(data[mask,j])
+        data[~mask,j] = replace
+        median.append(replace)
+
+    return data, median
 
 def correlation_filter(X, y, threshold = 0.01):
     """Removes features which are correlated with y with less than threshold
+
     input:
         X = training data
         y = corresponding goal-output of training data
@@ -201,6 +216,7 @@ def stitch_solution(X_test, y_result, ids_test_group, ids_test):
     """
     Puts found y values back in right order for the complete data matrix,
     since it was split in four groups.
+
     input:
         X_test =  original, preprocessed test data
         y_result =  output of created model,
